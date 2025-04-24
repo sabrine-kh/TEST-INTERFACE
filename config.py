@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- API Keys ---
-GROQ_API_KEY = os.getenv("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")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # --- Model Configuration ---
 # Recommend using Langchain's Groq integration if possible
