@@ -205,6 +205,7 @@ def create_extraction_chain(retriever, llm):
 
     # --- Use the SINGLE output JSON template ---
     template = """
+    for the part number 2098198-5 
 Use the following pieces of retrieved context to perform the extraction task based on the reasoning steps provided in the Extraction Instructions.
 Analyze the context carefully and follow the reasoning steps precisely.
 
