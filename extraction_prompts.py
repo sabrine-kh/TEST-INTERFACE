@@ -128,90 +128,65 @@ Determine connector gender using this reasoning chain:
 
 STEP 1: TERMINAL TYPE IDENTIFICATION (Internal Contacts)
 
-    Scan the document for information about the electrical contacts within the housing:
-    ✓ Explicit gender terms for contacts: "male pin", "female socket", etc.
-    ✓ Physical descriptions of contacts:
-    * "Pin contacts", "Tab contacts", "Blade contacts" → Functionally Male Contacts
-    * "Socket contacts", "Receptacle contacts" → Functionally Female Contacts
-    ✓ Specific terminal part numbers mentioned (requires knowledge base about those terminals, if available).
+- Scan for descriptions of the electrical contacts inside the housing:
+  ✓ "Male pin", "Blade", "Tab", etc. → Functionally Male
+  ✓ "Female socket", "Receptacle", etc. → Functionally Female
+  ✓ Known part numbers for terminals (if available) can confirm terminal type
 
-    Note the functional gender(s) of the internal contacts identified.
+→ Determine the gender of the internal contacts: Male, Female, or Both
 
-STEP 2: CAVITY ARCHITECTURE ANALYSIS (Housing Structure)
+STEP 2: CAVITY ARCHITECTURE ANALYSIS (Connector Housing)
 
-    Analyze the housing design based on descriptions or drawings:
-    ✓ Number of positions/cavities.
-    ✓ If multiple positions, are they intended for the same type of contact (uniform) or different types (mixed)?
-    ✓ Explicit mentions of cavity types: "pin cavities", "socket cavities".
+- Analyze how the housing and cavities are structured:
+  ✓ Count the number of cavities
+  ✓ Identify whether the same cavity accepts both types (Unisex)
+  ✓ Or if there are separate cavities for pins and sockets (Hybrid)
+  ✓ Watch for explicit terms like “pin cavity”, “socket cavity”
 
-    For potential mixed-gender contacts (identified in Step 1):
-    ✓ Check cavity configuration:
-    * "Same cavity accepts both pin and socket" → Indicates potential Unisex architecture.
-    * "Separate, dedicated cavities for pins and sockets" → Indicates Hybrid architecture.
+→ Determine architecture: Uniform (Male/Female), Unisex, or Hybrid
 
-STEP 3: MANUFACTURER NOMENCLATURE (Assembly Identification)
+STEP 3: FUNCTIONAL GENDER DETERMINATION
 
-    Interpret the primary name or terminology used by the manufacturer for the overall assembly:
+- Use terminal type + cavity structure to assign gender:
+  ✓ All socket terminals in single-type cavities → FEMALE
+  ✓ All pin terminals in single-type cavities → MALE
+  ✓ Mixed terminal types in the same cavity → UNISEX
+  ✓ Mixed terminal types in separate cavities → HYBRID
 
-        "Plug", "Header" → Strong indicator of MALE assembly gender.
+→ Assign gender based on actual contact and cavity function, not connector label
 
-        "Receptacle", "Socket", "Connector Housing" (if context implies mating to a plug/header) → Strong indicator of FEMALE assembly gender.
+STEP 4: CROSS-CHECK (Optional)
 
-        "Combo", "Hybrid Connector" → Likely Hybrid assembly gender.
+- Optionally check:
+  ✓ Drawings for visual confirmation of terminals or cavity shape
+  ✓ Manufacturer marketing terms ("Plug", "Receptacle") — but do NOT rely on them
+  ✓ IP rating, known connector family designs (if applicable)
 
-    Note any gender-specific suffixes in the main assembly part number (less common, e.g., "-M", "-F").
+→ Use only to validate, not to override Steps 1–3
 
-STEP 4: CONFLICT RESOLUTION & GENDER DETERMINATION
+STEP 5: FINAL DECISION
 
-    Priority Rule: The Manufacturer Nomenclature (Step 3) for the overall assembly ("Plug" or "Receptacle") is the primary determinant of the final assembly gender classification (Male/Female). This overrides the functional gender of the internal contacts (Step 1) if they conflict.
-
-        Example: A housing named "Plug" (Male indicator) containing internal socket contacts (Female function) is classified as MALE overall.
-
-        Example: A housing named "Receptacle" (Female indicator) containing internal pin contacts (Male function) is classified as FEMALE overall.
-
-    Secondary Checks (apply if Step 3 is ambiguous or indicates Hybrid/Unisex):
-
-        Explicit Gender Declarations: If the document explicitly states "Male connector", "Female connector", "Hybrid", "Unisex", use that declaration, overriding Step 3 if necessary (rare).
-
-        Cavity Configuration Evidence (Step 2): Use this to confirm Hybrid (separate mixed cavities) or Unisex (shared mixed cavities) only if Step 3 indicated such potential or was unclear.
-
-        Internal Contact Types (Step 1): Mainly used to confirm uniformity (all pins or all sockets) or mixed nature for Hybrid/Unisex analysis.
-
-    Final Decision Logic:
-
-        If Step 3 clearly indicates "Plug" (Male) or "Receptacle" (Female) → Assign that gender.
-
-        If Step 3 indicates Hybrid/Combo → Assign Hybrid.
-
-        If Step 2 confirms Unisex architecture → Assign Unisex.
-
-        If unambiguous determination isn't possible following these rules → Assign NOT FOUND.
-
-    Reject unverified assumptions.
-
-STEP 5: FINAL VALIDATION
-
-    Confirm the SINGLE final classification based on the resolution in Step 4:
-    ✓ Male: Typically a "Plug" assembly.
-    ✓ Female: Typically a "Receptacle" assembly.
-    ✓ Hybrid: Contains separate cavities for both Male and Female functional contacts.
-    ✓ Unisex: Contains cavities designed to accept both Male and Female functional contacts.
-
-    Ensure the reasoning aligns with the priority rules.
+- Return the final functional gender classification:
+  ✓ MALE – All male terminals (pins)
+  ✓ FEMALE – All female terminals (sockets)
+  ✓ UNISEX – Same cavity accepts both
+  ✓ HYBRID – Separate cavities for male and female terminals
+  ✓ NOT FOUND – Insufficient data to decide
 
 Examples:
 
-"Part Name: Receptacle Assembly. Drawing shows pin contacts in all positions."
-→ REASONING: [Step1] Pin contacts (Male function) → [Step3] "Receptacle" = Female assembly → [Step4] Priority Rule applied: Manufacturer Nomenclature 'Receptacle' determines Female assembly gender, overriding internal contact type → [Step5] Uniform Female assembly.
-→ GENDER: Female
+"Connector houses only socket terminals in one cavity."
+→ GENDER: FEMALE
 
-"Part Name: Plug Assembly. Document specifies applicable socket terminals."
-→ REASONING: [Step1] Socket terminals (Female function) → [Step3] "Plug" = Male assembly → [Step4] Priority Rule applied: Manufacturer Nomenclature 'Plug' determines Male assembly gender, overriding internal contact type → [Step5] Uniform Male assembly.
-→ GENDER: Male
+"Connector called 'Plug Assembly', but cavity contains a socket."
+→ GENDER: FEMALE
 
-"Combo Connector: Cavities A1-A5 accept pins, B1-B5 accept sockets."
-→ REASONING: [Step1] Both Pin & Socket contacts → [Step2] Separate cavities → [Step3] "Combo" = Likely Hybrid → [Step4] Cavity evidence confirms Hybrid → [Step5] Hybrid assembly.
-→ GENDER: Hybrid
+"5 pin cavities and 5 socket cavities"
+→ GENDER: HYBRID
+
+"One cavity that accepts both pins and sockets"
+→ GENDER: UNISEX
+
 
 Output format:
 REASONING: [Key determinations following the steps and priority rule]
