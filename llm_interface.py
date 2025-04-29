@@ -196,37 +196,35 @@ def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever
 def create_extraction_chain(retriever, llm):
     """
     Creates a RAG chain specifically for running a SINGLE extraction prompt
-    against retrieved context and outputting JSON.
-    (This is the version from before batching was introduced)
+    against retrieved context and outputting JSON. Now includes part_number.
     """
     if retriever is None or llm is None:
         logger.error("Retriever or LLM is not initialized for extraction chain.")
         return None
 
-    # --- Use the SINGLE output JSON template ---
+    # --- Updated template to include part_number ---
     template = """
-    for the part number 2098198-5 
-Use the following pieces of retrieved context to perform the extraction task based on the reasoning steps provided in the Extraction Instructions.
-Analyze the context carefully and follow the reasoning steps precisely.
+    Use the following pieces of retrieved context to perform the extraction task for the part number "{part_number}" based on the reasoning steps provided in the Extraction Instructions.
+    Analyze the context carefully and follow the reasoning steps precisely.
 
-Context:
-{context}
+    Context:
+    {context}
 
-Extraction Instructions:
-{extraction_instructions}
+    Extraction Instructions:
+    {extraction_instructions}
 
----
-Final Output Requirement:
-Your final output MUST be a single, valid JSON object containing exactly one key-value pair.
-- The key for the JSON object MUST be the string: "{attribute_key}"
-- The value MUST be the extracted result determined by following the Extraction Instructions, provided as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
-- Do NOT include any explanations, reasoning, or any text outside of this single JSON object in your response.
+    ---
+    Final Output Requirement:
+    Your final output MUST be a single, valid JSON object containing exactly one key-value pair.
+    - The key for the JSON object MUST be the string: "{attribute_key}"
+    - The value MUST be the extracted result determined by following the Extraction Instructions, provided as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
+    - Do NOT include any explanations, reasoning, or any text outside of this single JSON object in your response.
 
-Example Output Format:
-{{"{attribute_key}": "extracted_value"}}
+    Example Output Format:
+    {{"{attribute_key}": "extracted_value"}}
 
-Output:
-"""
+    Output:
+    """
     prompt = PromptTemplate.from_template(template)
 
     def format_docs(docs):
@@ -245,30 +243,32 @@ Output:
 
 
     # Define the extraction chain using LCEL
-    # Takes 'extraction_instructions' and 'attribute_key' as input
+    # Takes 'extraction_instructions', 'attribute_key', and 'part_number' as input
     extraction_chain = (
         RunnableParallel(
-            # Retrieve context based on the attribute_key for better focus
-            {"context": RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']}")) | format_docs,
+            # Retrieve context based on the attribute_key and part_number for better focus
+            {"context": RunnablePassthrough() | (lambda x: retriever.invoke(f"For part number {x['part_number']}, extract information about {x['attribute_key']}")) | format_docs,
              "extraction_instructions": RunnablePassthrough(),
-             "attribute_key": RunnablePassthrough() }
+             "attribute_key": RunnablePassthrough(),
+             "part_number": RunnablePassthrough() } # Pass part_number through
         )
         # Assign the inputs correctly to the prompt variables
         .assign(extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
-                attribute_key=lambda x: x['attribute_key']['attribute_key'])
+                attribute_key=lambda x: x['attribute_key']['attribute_key'],
+                part_number=lambda x: x['part_number']['part_number']) # Assign part_number
         | prompt
         | llm
         | StrOutputParser()
     )
 
-    logger.info("SINGLE JSON Extraction RAG chain created successfully.")
+    logger.info("SINGLE JSON Extraction RAG chain created successfully (includes part_number).")
     return extraction_chain
 
 @logger.catch(reraise=True)
-def run_extraction(extraction_instructions: str, attribute_key: str, extraction_chain):
+def run_extraction(extraction_instructions: str, attribute_key: str, part_number: str, extraction_chain):
     """
-    Runs a specific extraction prompt/instructions through the JSON extraction RAG chain.
-    (This is the version from before batching was introduced)
+    Runs a specific extraction prompt/instructions through the JSON extraction RAG chain,
+    now including the part_number.
     """
     if not extraction_chain:
         logger.error("Extraction chain is not available.")
@@ -279,10 +279,18 @@ def run_extraction(extraction_instructions: str, attribute_key: str, extraction_
     if not attribute_key:
         logger.warning("Received empty attribute key.")
         return '{"error": "No attribute key provided."}'
+    if not part_number:
+        logger.warning("Received empty part number.")
+        return '{"error": "No part number provided."}'
 
     try:
-        logger.info(f"Invoking extraction chain for key: '{attribute_key}'")
-        input_data = {"extraction_instructions": extraction_instructions, "attribute_key": attribute_key}
+        logger.info(f"Invoking extraction chain for key: '{attribute_key}', Part Number: '{part_number}'")
+        # Pass part_number in the input dictionary
+        input_data = {
+            "extraction_instructions": extraction_instructions,
+            "attribute_key": attribute_key,
+            "part_number": part_number
+        }
         response = extraction_chain.invoke(input_data)
         logger.info("Extraction chain invoked successfully.")
         # Clean potential markdown ```json ... ``` tags
@@ -295,11 +303,11 @@ def run_extraction(extraction_instructions: str, attribute_key: str, extraction_
         error_str = str(e).lower()
         # Add specific check for rate limit errors
         if "rate limit" in error_str or "too many requests" in error_str or "429" in error_str:
-             logger.error(f"Rate limit hit during extraction for '{attribute_key}': {e}", exc_info=False)
-             return f'{{"error": "API Rate Limit Hit for {attribute_key}"}}'
+             logger.error(f"Rate limit hit during extraction for '{attribute_key}' (PN: {part_number}): {e}", exc_info=False)
+             return f'{{"error": "API Rate Limit Hit for {attribute_key} (PN: {part_number})" }}' # Include PN in error
         else:
-             logger.error(f"Error invoking extraction chain for '{attribute_key}': {e}", exc_info=True)
-             return f'{{"error": "An error occurred during extraction: {str(e)}"}}'
+             logger.error(f"Error invoking extraction chain for '{attribute_key}' (PN: {part_number}): {e}", exc_info=True)
+             return f'{{"error": "An error occurred during extraction (PN: {part_number}): {str(e)}"}}' # Include PN in error
 
 # --- REMOVE BATCH FUNCTIONS ---
 # def create_batch_extraction_chain(retriever, llm): ...

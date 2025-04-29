@@ -85,6 +85,9 @@ if 'extraction_chain' not in st.session_state:
     st.session_state.extraction_chain = None
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = [] # Store names of processed files
+# Add state variable for the part number
+if 'current_part_number' not in st.session_state:
+    st.session_state.current_part_number = None
 # Add state for evaluation
 if 'evaluation_results' not in st.session_state:
     st.session_state.evaluation_results = [] # List to store detailed results per field
@@ -150,6 +153,8 @@ def reset_evaluation_state():
     # Clear data editor state if it exists
     if 'gt_editor' in st.session_state:
         del st.session_state['gt_editor']
+    # Reset part number when evaluation/processing state is reset
+    # st.session_state.current_part_number = None # Decide if needed here or only on process click
 
 # Try loading existing vector store and create SINGLE extraction chain
 if st.session_state.retriever is None and config.CHROMA_SETTINGS.is_persistent and embedding_function:
@@ -190,12 +195,26 @@ with st.sidebar:
         key="pdf_uploader"
     )
 
+    # Add input for part number
+    part_number_input = st.text_input(
+        "Enter Part Number for Uploaded PDF(s):",
+        key="part_number_input",
+        value=st.session_state.current_part_number if st.session_state.current_part_number else "" # Pre-fill if exists
+    )
+
     process_button = st.button("Process Uploaded Documents", key="process_button", type="primary")
 
     if process_button and uploaded_files:
-        if not embedding_function or not llm:
+        # --- Add check for part number ---
+        if not part_number_input:
+            st.error("Please enter a Part Number before processing.")
+        # ---------------------------------
+        elif not embedding_function or not llm:
              st.error("Core components (Embeddings or LLM) failed to initialize earlier. Cannot process documents.")
         else:
+            # Store the entered part number in session state
+            st.session_state.current_part_number = part_number_input
+
             # Reset state including evaluation and the extraction flag
             st.session_state.retriever = None
             st.session_state.extraction_chain = None # Reset single chain
@@ -203,7 +222,7 @@ with st.sidebar:
             reset_evaluation_state() # Reset evaluation results AND extraction_performed flag
 
             filenames = [f.name for f in uploaded_files]
-            logger.info(f"Starting processing for {len(filenames)} files: {', '.join(filenames)}")
+            logger.info(f"Starting processing for {len(filenames)} files: {', '.join(filenames)} associated with Part Number: '{st.session_state.current_part_number}'")
             # --- PDF Processing ---
             with st.spinner("Processing PDFs... Loading, cleaning, splitting..."):
                 processed_docs = None # Initialize
@@ -257,13 +276,17 @@ with st.sidebar:
     # --- Display processed files status (Simplified) ---
     st.subheader("Processing Status")
     if st.session_state.extraction_chain and st.session_state.processed_files: # Check if ready for extraction results
-        st.success(f"Ready. Processed: {', '.join(st.session_state.processed_files)}")
+        status_message = f"Ready. Processed: {', '.join(st.session_state.processed_files)}"
+        if st.session_state.current_part_number:
+            status_message += f" (Part #: {st.session_state.current_part_number})"
+        st.success(status_message)
     elif persistence_enabled and st.session_state.retriever and not st.session_state.extraction_chain:
          st.warning("Loaded existing data, but failed to create extraction chain.")
     elif persistence_enabled and st.session_state.retriever:
+         # If loading from disk, we might not have the part number unless it's saved with the store (future enhancement)
          st.success(f"Ready. Using existing data loaded from disk.") # Assuming chain created on load
     else:
-        st.info("Upload and process PDF documents to view extracted data.")
+        st.info("Upload PDF documents and enter Part Number to process and view extracted data.")
 
 
 # --- Main Area for Displaying Extraction Results ---
@@ -275,8 +298,11 @@ if not st.session_state.extraction_chain:
     if not st.session_state.evaluation_results and not st.session_state.extraction_performed:
          reset_evaluation_state() # Ensure reset if no chain and extraction not done
 else:
+    # Add a check here to ensure part number is available before running extraction
+    if not st.session_state.current_part_number:
+        st.warning("Part Number is missing. Please process documents with a Part Number in the sidebar.")
     # --- Block 1: Run Extraction (if needed) ---
-    if st.session_state.extraction_chain and not st.session_state.extraction_performed:
+    elif st.session_state.extraction_chain and not st.session_state.extraction_performed:
         # Define the prompts (attribute keys and their instructions)
         prompts_to_run = {
             # Material Properties
@@ -309,7 +335,8 @@ else:
             "HV Qualified": HV_QUALIFIED_PROMPT
         }
 
-        st.info(f"Running {len(prompts_to_run)} extraction prompts individually...")
+        current_part_number = st.session_state.current_part_number # Get the part number
+        st.info(f"Running {len(prompts_to_run)} extraction prompts individually for Part Number: {current_part_number}...") # Update info message
 
         cols = st.columns(2)
         col_index = 0
@@ -333,7 +360,14 @@ else:
                 with st.spinner(f"Extracting {prompt_name}..."):
                     try:
                         start_time = time.time()
-                        json_result_str = run_extraction(prompt_text, attribute_key, st.session_state.extraction_chain)
+                        # --- Updated call to run_extraction ---
+                        json_result_str = run_extraction(
+                            prompt_text,
+                            attribute_key,
+                            current_part_number, # Pass the part number
+                            st.session_state.extraction_chain
+                        )
+                        # ---------------------------------------
                         run_time = time.time() - start_time
                         logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
 
@@ -343,9 +377,9 @@ else:
                         # ---------------
 
                     except Exception as e:
-                        logger.error(f"Error during extraction call for '{prompt_name}': {e}", exc_info=True)
+                        logger.error(f"Error during extraction call for '{prompt_name}' (PN: {current_part_number}): {e}", exc_info=True) # Add PN to log
                         st.error(f"Could not run extraction for {prompt_name}: {e}")
-                        json_result_str = f'{{"error": "Exception during extraction call: {e}"}}'
+                        json_result_str = f'{{"error": "Exception during extraction call (PN: {current_part_number}): {e}"}}' # Add PN to error json
                         run_time = time.time() - start_time # Record time even on error
 
                 # --- Card Implementation ---
@@ -498,11 +532,11 @@ else:
         if extraction_successful: # Only update state if the loop completed reasonably
             st.session_state.evaluation_results = extraction_results_list # Store results in session state
             st.session_state.extraction_performed = True # Set the flag HERE after successful run
-            st.success("Automated extraction complete. Enter ground truth below.")
+            st.success(f"Automated extraction complete for Part Number: {current_part_number}. Enter ground truth below.") # Update success message
             # st.rerun() # REMOVE or COMMENT OUT this line
         else:
             # Handle case where loop might have been interrupted (optional)
-            st.error("Extraction process encountered issues. Some results may be missing.")
+            st.error(f"Extraction process encountered issues for Part Number: {current_part_number}. Some results may be missing.") # Update error message
             # Decide if partial results should be stored or flag set
             # If you still want to proceed even with errors, you might set the flag here:
             # st.session_state.extraction_performed = True
