@@ -187,25 +187,25 @@ if 'chat_history' not in st.session_state:
 def initialize_embeddings():
     logger.info("Attempting to initialize embedding function...")
     try:
-    embeddings = get_embedding_function()
+        embeddings = get_embedding_function()
         logger.success("Embedding function initialized successfully.")
-    return embeddings
-except Exception as e:
-    logger.error(f"Failed to initialize embeddings: {e}", exc_info=True)
+        return embeddings
+    except Exception as e:
+        logger.error(f"Failed to initialize embeddings: {e}", exc_info=True)
         st.error(f"Fatal Error: Could not initialize embedding model. Please check logs or model configuration. Error: {e}")
-    st.stop()
+        st.stop()
 
 # @st.cache_resource # Keep caching for performance
 def initialize_llm_cached():
     logger.info("Attempting to initialize LLM...")
-try:
+    try:
         llm_instance = initialize_llm()
         logger.success("LLM initialized successfully.")
         return llm_instance
-except Exception as e:
-     logger.error(f"Failed to initialize LLM: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM: {e}", exc_info=True)
         st.error(f"Fatal Error: Could not initialize LLM. Please check API key and configuration. Error: {e}")
-     st.stop()
+        st.stop()
 
 embedding_function = initialize_embeddings()
 llm = initialize_llm_cached()
@@ -314,16 +314,16 @@ else:
         st.markdown("#### Upload File")
         # Use a simple button first, then show uploader if clicked? Or just show uploader.
     uploaded_files = st.file_uploader(
-            "Select PDF documents",
+        "Select PDF documents",
         type="pdf",
         accept_multiple_files=True,
-            key="pdf_uploader_main",
-            label_visibility="collapsed" # Hide label, use markdown header instead
-        )
-        if uploaded_files:
-            # Store file info immediately in session state if needed
-            # st.session_state.processed_files_info = [(f.name, f.getvalue()) for f in uploaded_files]
-            st.success(f"{len(uploaded_files)} file(s) selected.")
+        key="pdf_uploader_main",
+        label_visibility="collapsed" # Hide label, use markdown header instead
+    )
+    if uploaded_files:
+        # Store file info immediately in session state if needed
+        # st.session_state.processed_files_info = [(f.name, f.getvalue()) for f in uploaded_files]
+        st.success(f"{len(uploaded_files)} file(s) selected.")
 
     part_number_input = None
     with part_num_col:
@@ -344,9 +344,9 @@ else:
     with process_col2: # Center the button
         process_disabled = not uploaded_files or not part_number_input
         if st.button("Process Documents", key="process_button_main", type="primary", disabled=process_disabled, use_container_width=True):
-        if not embedding_function or not llm:
-             st.error("Core components (Embeddings or LLM) failed to initialize earlier. Cannot process documents.")
-        else:
+            if not embedding_function or not llm:
+                st.error("Core components (Embeddings or LLM) failed to initialize earlier. Cannot process documents.")
+            else:
                 # Store file info before processing
                 st.session_state.processed_files_info = [(f.name, f.getvalue()) for f in uploaded_files]
 
@@ -358,174 +358,165 @@ else:
                 filenames = [f[0] for f in st.session_state.processed_files_info]
                 logger.info(f"Starting processing for {len(filenames)} files: {', '.join(filenames)} associated with Part Number: '{st.session_state.current_part_number}'")
 
-            # --- PDF Processing ---
+                # --- PDF Processing ---
                 processed_docs = None
                 with st.spinner("Processing PDFs... Loading, cleaning..."):
-                try:
-                    start_time = time.time()
-                        # We need file-like objects for process_uploaded_pdfs
-                        # Create temporary in-memory files or save temporarily if needed
-                        # For simplicity, let's modify process_uploaded_pdfs or pass bytes directly
-                        # Assuming process_uploaded_pdfs can handle bytes or file paths
-                        # This part needs careful handling based on pdf_processor implementation
-
-                        # Create file-like objects for process_uploaded_pdfs
+                    try:
+                        start_time = time.time()
                         from io import BytesIO
                         file_like_objects = []
                         for name, content_bytes in st.session_state.processed_files_info:
-                             file_obj = BytesIO(content_bytes)
-                             file_obj.name = name # PyMuPDFLoader might need the name attribute
-                             file_like_objects.append(file_obj)
-
+                            file_obj = BytesIO(content_bytes)
+                            file_obj.name = name # PyMuPDFLoader might need the name attribute
+                            file_like_objects.append(file_obj)
                         temp_dir = os.path.join(os.getcwd(), "temp_pdf_files_streamlit") # Use different dir?
                         processed_docs = process_uploaded_pdfs(file_like_objects, temp_dir) # Pass file-like objects
-                    processing_time = time.time() - start_time
-                    logger.info(f"PDF processing took {processing_time:.2f} seconds.")
-                except Exception as e:
-                    logger.error(f"Failed during PDF processing phase: {e}", exc_info=True)
-                    st.error(f"Error processing PDFs: {e}")
+                        processing_time = time.time() - start_time
+                        logger.info(f"PDF processing took {processing_time:.2f} seconds.")
+                    except Exception as e:
+                        logger.error(f"Failed during PDF processing phase: {e}", exc_info=True)
+                        st.error(f"Error processing PDFs: {e}")
 
-                # --- Vector Store Indexing & Chain Creation ---
-            if processed_docs:
-                    logger.info(f"Generated {len(processed_docs)} document chunks (Note: Chunking strategy might be simple).")
-                with st.spinner("Indexing documents in vector store..."):
-                    try:
-                        start_time = time.time()
-                        st.session_state.retriever = setup_vector_store(processed_docs, embedding_function)
-                        indexing_time = time.time() - start_time
-                        logger.info(f"Vector store setup took {indexing_time:.2f} seconds.")
-                        except Exception as e:
-                            logger.error(f"Failed during vector store setup: {e}", exc_info=True)
-                            st.error(f"Error setting up vector store: {e}")
-                            st.session_state.retriever = None # Ensure it's None on failure
-
-                        if st.session_state.retriever:
-                            logger.success("Vector store setup complete. Retriever is ready.")
-                        # --- Create Extraction Chain ---
-                            with st.spinner("Preparing extraction engine..."):
+                    if processed_docs:
+                        logger.info(f"Generated {len(processed_docs)} document chunks (Note: Chunking strategy might be simple).")
+                        with st.spinner("Indexing documents in vector store..."):
                             try:
-                                 st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm)
-                            if st.session_state.extraction_chain:
-                                logger.success("Extraction chain created.")
-                            else:
-                                    st.error("Failed to create extraction chain.")
-                    except Exception as e:
-                                logger.error(f"Failed creating extraction chain: {e}", exc_info=True)
-                                st.error(f"Error creating extraction chain: {e}")
+                                start_time = time.time()
+                                st.session_state.retriever = setup_vector_store(processed_docs, embedding_function)
+                                indexing_time = time.time() - start_time
+                                logger.info(f"Vector store setup took {indexing_time:.2f} seconds.")
+                            except Exception as e:
+                                logger.error(f"Failed during vector store setup: {e}", exc_info=True)
+                                st.error(f"Error setting up vector store: {e}")
+                                st.session_state.retriever = None # Ensure it's None on failure
 
-                        # --- Run Extraction ---
-                        if st.session_state.extraction_chain:
-                             with st.spinner(f"Running extraction for {len(prompts_to_run)} attributes..."):
-                                # Reuse extraction logic from before (run_extraction function call)
-                                prompts_to_run = { # Define prompts here or import
-                                    "Material Filling": MATERIAL_PROMPT, "Material Name": MATERIAL_NAME_PROMPT, "Pull-to-Seat": PULL_TO_SEAT_PROMPT,
-                                    "Gender": GENDER_PROMPT, "Number of Cavities": NUMBER_OF_CAVITIES_PROMPT, "Number of Rows": NUMBER_OF_ROWS_PROMPT,
-                                    "Mechanical Coding": MECHANICAL_CODING_PROMPT, "Colour": COLOUR_PROMPT, "Colour Coding": COLOUR_CODING_PROMPT,
-                                    "Working Temperature": WORKING_TEMPERATURE_PROMPT, "Housing Seal": HOUSING_SEAL_PROMPT, "Wire Seal": WIRE_SEAL_PROMPT,
-                                    "Sealing": SEALING_PROMPT, "Sealing Class": SEALING_CLASS_PROMPT, "Contact Systems": CONTACT_SYSTEMS_PROMPT,
-                                    "Terminal Position Assurance": TERMINAL_POSITION_ASSURANCE_PROMPT, "Connector Position Assurance": CONNECTOR_POSITION_ASSURANCE_PROMPT,
-                                    "Closed Cavities": CLOSED_CAVITIES_PROMPT, "Pre-Assembled": PRE_ASSEMBLED_PROMPT, "Type of Connector": CONNECTOR_TYPE_PROMPT,
-                                    "Set/Kit": SET_KIT_PROMPT, "HV Qualified": HV_QUALIFIED_PROMPT
-                                }
-                                extraction_results_list = []
-                                extraction_successful = True
-                                SLEEP_INTERVAL_SECONDS = 0.5 # Consider rate limits
-
-        for prompt_name, prompt_text in prompts_to_run.items():
-                json_result_str = '{"error": "Extraction not run."}'
-                                    run_time = 0.0; parse_error = None; is_rate_limit = False
-                                    final_answer_value = "Error" # Default value
-
+                            if st.session_state.retriever:
+                                logger.success("Vector store setup complete. Retriever is ready.")
+                                # --- Create Extraction Chain ---
+                                with st.spinner("Preparing extraction engine..."):
                                     try:
-                                        start_time_ext = time.time()
-                                        json_result_str = run_extraction(
-                                            prompt_text, prompt_name, st.session_state.current_part_number, st.session_state.extraction_chain
-                                        )
-                                        run_time = time.time() - start_time_ext
-                        logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
-                                        time.sleep(SLEEP_INTERVAL_SECONDS) # Delay
-                    except Exception as e:
-                                         logger.error(f"Error during extraction call for '{prompt_name}' (PN: {st.session_state.current_part_number}): {e}", exc_info=True)
-                        json_result_str = f'{{"error": "Exception during extraction call: {e}"}}'
-                                         extraction_successful = False # Mark as potentially failed
+                                        st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm)
+                                        if st.session_state.extraction_chain:
+                                            logger.success("Extraction chain created.")
+                                        else:
+                                            st.error("Failed to create extraction chain.")
+                                    except Exception as e:
+                                        logger.error(f"Failed creating extraction chain: {e}", exc_info=True)
+                                        st.error(f"Error creating extraction chain: {e}")
 
-                                    # --- Simple Parsing Logic (same as before, adapted) ---
-                                    raw_llm_output = json_result_str
-                                    string_to_search = raw_llm_output.strip()
-                                    parsed_json = None
-                                    is_success = False; is_error = False; is_not_found = False; is_rate_limit = False; parse_error = None
+                                # --- Run Extraction ---
+                                if st.session_state.extraction_chain:
+                                    with st.spinner(f"Running extraction for {len(prompts_to_run)} attributes..."):
+                                        # Reuse extraction logic from before (run_extraction function call)
+                                        prompts_to_run = { # Define prompts here or import
+                                            "Material Filling": MATERIAL_PROMPT, "Material Name": MATERIAL_NAME_PROMPT, "Pull-to-Seat": PULL_TO_SEAT_PROMPT,
+                                            "Gender": GENDER_PROMPT, "Number of Cavities": NUMBER_OF_CAVITIES_PROMPT, "Number of Rows": NUMBER_OF_ROWS_PROMPT,
+                                            "Mechanical Coding": MECHANICAL_CODING_PROMPT, "Colour": COLOUR_PROMPT, "Colour Coding": COLOUR_CODING_PROMPT,
+                                            "Working Temperature": WORKING_TEMPERATURE_PROMPT, "Housing Seal": HOUSING_SEAL_PROMPT, "Wire Seal": WIRE_SEAL_PROMPT,
+                                            "Sealing": SEALING_PROMPT, "Sealing Class": SEALING_CLASS_PROMPT, "Contact Systems": CONTACT_SYSTEMS_PROMPT,
+                                            "Terminal Position Assurance": TERMINAL_POSITION_ASSURANCE_PROMPT, "Connector Position Assurance": CONNECTOR_POSITION_ASSURANCE_PROMPT,
+                                            "Closed Cavities": CLOSED_CAVITIES_PROMPT, "Pre-Assembled": PRE_ASSEMBLED_PROMPT, "Type of Connector": CONNECTOR_TYPE_PROMPT,
+                                            "Set/Kit": SET_KIT_PROMPT, "HV Qualified": HV_QUALIFIED_PROMPT
+                                        }
+                                        extraction_results_list = []
+                                        extraction_successful = True
+                                        SLEEP_INTERVAL_SECONDS = 0.5 # Consider rate limits
 
-                                    # Basic Cleaning
-                    if string_to_search.startswith("```json"):
-                                        string_to_search = string_to_search[7:-3] if string_to_search.endswith("```") else string_to_search[7:]
-                                    string_to_search = string_to_search.strip()
+                                        for prompt_name, prompt_text in prompts_to_run.items():
+                                            json_result_str = '{"error": "Extraction not run."}'
+                                            run_time = 0.0; parse_error = None; is_rate_limit = False
+                                            final_answer_value = "Error" # Default value
 
-                                    # Try Parsing
-                                    try:
-                        match = re.search(r'\{.*\}', string_to_search, re.DOTALL)
-                                        json_string_to_parse = match.group(0) if match else string_to_search
-                                        parsed_json = json.loads(json_string_to_parse)
+                                            try:
+                                                start_time_ext = time.time()
+                                                json_result_str = run_extraction(
+                                                    prompt_text, prompt_name, st.session_state.current_part_number, st.session_state.extraction_chain
+                                                )
+                                                run_time = time.time() - start_time_ext
+                                                logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
+                                                time.sleep(SLEEP_INTERVAL_SECONDS) # Delay
+                                            except Exception as e:
+                                                logger.error(f"Error during extraction call for '{prompt_name}' (PN: {st.session_state.current_part_number}): {e}", exc_info=True)
+                                                json_result_str = f'{{"error": "Exception during extraction call: {e}"}}'
+                                                extraction_successful = False # Mark as potentially failed
 
-                        if isinstance(parsed_json, dict):
-                            actual_keys = list(parsed_json.keys())
-                            if len(actual_keys) == 1:
-                                actual_key = actual_keys[0]
-                                                final_answer_value = str(list(parsed_json.values())[0])
-                                                if actual_key != prompt_name: logger.warning(f"Key mismatch for '{prompt_name}'. Expected '{prompt_name}', got '{actual_key}'.")
-                                                # Determine status
-                                                is_not_found = "not found" in final_answer_value.lower()
-                                                is_success = not is_not_found
-                            elif "error" in parsed_json:
-                                     error_msg = parsed_json['error']
-                                     final_answer_value = f"Error: {error_msg}"
-                                                 is_rate_limit = "rate limit" in error_msg.lower()
-                                                 is_error = not is_rate_limit
-                                                 parse_error = ValueError(f"LLM Error: {error_msg}")
-                            else:
-                                final_answer_value = "Unexpected JSON Format"
-                                                 is_error = True
-                                                 parse_error = ValueError(f"Wrong keys: {actual_keys}")
-                        else:
-                                            final_answer_value = "Unexpected JSON Type"
-                                            is_error = True
-                                            parse_error = TypeError(f"Expected dict, got {type(parsed_json)}")
-                    except json.JSONDecodeError as json_err:
-                                        final_answer_value = "Invalid JSON"
-                                        is_error = True
-                        parse_error = json_err
-                    except Exception as parse_exc:
-                        final_answer_value = "Parsing Error"
-                                        is_error = True
-                                        parse_error = parse_exc
+                                            # --- Simple Parsing Logic (same as before, adapted) ---
+                                            raw_llm_output = json_result_str
+                                            string_to_search = raw_llm_output.strip()
+                                            parsed_json = None
+                                            is_success = False; is_error = False; is_not_found = False; is_rate_limit = False; parse_error = None
 
-                                    # --- Store Result ---
-                    result_data = {
-                        'Prompt Name': prompt_name,
-                        'Extracted Value': final_answer_value,
-                                        'Raw Output': raw_llm_output, # Keep raw for debugging
-                        'Parse Error': str(parse_error) if parse_error else None,
-                        'Is Success': is_success,
-                                        'Is Error': is_error,
-                        'Is Not Found': is_not_found,
-                        'Is Rate Limit': is_rate_limit,
-                                        'Latency (s)': round(run_time, 2)
-                    }
-                    extraction_results_list.append(result_data)
-                                # --- End Extraction Loop ---
+                                            # Basic Cleaning
+                                            if string_to_search.startswith("```json"):
+                                                string_to_search = string_to_search[7:-3] if string_to_search.endswith("```") else string_to_search[7:]
+                                            string_to_search = string_to_search.strip()
 
-                                if extraction_successful or extraction_results_list: # Even if some failed, show results
-                                     st.session_state.evaluation_results = extraction_results_list
-                                     st.session_state.extraction_performed = True
-                                     logger.success(f"Extraction complete for Part Number: {st.session_state.current_part_number}.")
-                                     st.rerun() # Rerun to switch view to results grid
+                                            # Try Parsing
+                                            try:
+                                                match = re.search(r'\{.*\}', string_to_search, re.DOTALL)
+                                                json_string_to_parse = match.group(0) if match else string_to_search
+                                                parsed_json = json.loads(json_string_to_parse)
+
+                                                if isinstance(parsed_json, dict):
+                                                    actual_keys = list(parsed_json.keys())
+                                                    if len(actual_keys) == 1:
+                                                        actual_key = actual_keys[0]
+                                                        final_answer_value = str(list(parsed_json.values())[0])
+                                                        if actual_key != prompt_name: logger.warning(f"Key mismatch for '{prompt_name}'. Expected '{prompt_name}', got '{actual_key}'.")
+                                                        # Determine status
+                                                        is_not_found = "not found" in final_answer_value.lower()
+                                                        is_success = not is_not_found
+                                                    elif "error" in parsed_json:
+                                                        error_msg = parsed_json['error']
+                                                        final_answer_value = f"Error: {error_msg}"
+                                                        is_rate_limit = "rate limit" in error_msg.lower()
+                                                        is_error = not is_rate_limit
+                                                        parse_error = ValueError(f"LLM Error: {error_msg}")
+                                                    else:
+                                                        final_answer_value = "Unexpected JSON Format"
+                                                        is_error = True
+                                                        parse_error = ValueError(f"Wrong keys: {actual_keys}")
+                                                else:
+                                                    final_answer_value = "Unexpected JSON Type"
+                                                    is_error = True
+                                                    parse_error = TypeError(f"Expected dict, got {type(parsed_json)}")
+                                            except json.JSONDecodeError as json_err:
+                                                final_answer_value = "Invalid JSON"
+                                                is_error = True
+                                                parse_error = json_err
+                                            except Exception as parse_exc:
+                                                final_answer_value = "Parsing Error"
+                                                is_error = True
+                                                parse_error = parse_exc
+
+                                            # --- Store Result ---
+                                            result_data = {
+                                                'Prompt Name': prompt_name,
+                                                'Extracted Value': final_answer_value,
+                                                'Raw Output': raw_llm_output, # Keep raw for debugging
+                                                'Parse Error': str(parse_error) if parse_error else None,
+                                                'Is Success': is_success,
+                                                'Is Error': is_error,
+                                                'Is Not Found': is_not_found,
+                                                'Is Rate Limit': is_rate_limit,
+                                                'Latency (s)': round(run_time, 2)
+                                            }
+                                            extraction_results_list.append(result_data)
+                                        # --- End Extraction Loop ---
+
+                                        if extraction_successful or extraction_results_list: # Even if some failed, show results
+                                            st.session_state.evaluation_results = extraction_results_list
+                                            st.session_state.extraction_performed = True
+                                            logger.success(f"Extraction complete for Part Number: {st.session_state.current_part_number}.")
+                                            st.rerun() # Rerun to switch view to results grid
+                                        else:
+                                            st.error("Extraction failed to produce results.")
                                 else:
-                                     st.error("Extraction failed to produce results.")
-                        else:
-                             st.error("Extraction chain not available. Cannot run extraction.")
-        else:
-                         st.error("Vector store setup failed. Cannot proceed.")
-                elif uploaded_files: # If files were uploaded but processing failed
-                    st.error("Could not process the uploaded PDFs.")
+                                    st.error("Extraction chain not available. Cannot run extraction.")
+                            else:
+                                st.error("Vector store setup failed. Cannot proceed.")
+                    elif uploaded_files: # If files were uploaded but processing failed
+                        st.error("Could not process the uploaded PDFs.")
 
 
 # --- Chatbot Modal / Section ---
