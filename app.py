@@ -407,18 +407,18 @@ else:
                         file_like_objects.append(file_obj)
 
                     # Create a temporary directory if pdf_processor needs file paths
-                    # temp_dir = os.path.join(os.getcwd(), "temp_pdf_files_streamlit")
-                    # os.makedirs(temp_dir, exist_ok=True)
+                    temp_dir = os.path.join(os.getcwd(), "temp_pdf_files_streamlit") # Use different dir?
+                    os.makedirs(temp_dir, exist_ok=True)
                     # Note: If process_uploaded_pdfs handles BytesIO directly, temp_dir might not be needed
                     # Assuming it handles BytesIO or similar file-like objects
-                    processed_docs = process_uploaded_pdfs(file_like_objects, None) # Pass None if temp dir not needed
+                    processed_docs = process_uploaded_pdfs(file_like_objects, temp_dir) # Pass file-like objects
 
                     processing_time = time.time() - start_time
                     logger.info(f"PDF processing took {processing_time:.2f} seconds.")
                     if not processed_docs:
                         pdf_processing_error = "No document content could be extracted from the PDF(s)."
                         logger.warning(pdf_processing_error)
-                    # Clean up temp dir if created
+                    # Clean up temp dir if created (Requires shutil import)
                     # if os.path.exists(temp_dir): shutil.rmtree(temp_dir)
 
             except Exception as e:
