@@ -15,16 +15,35 @@ import config # Import configuration
 # --- Embedding Function ---
 @logger.catch(reraise=True) # Automatically log exceptions
 def get_embedding_function():
-    """Initializes and returns the HuggingFace embedding function."""
-    model_kwargs = {'device': config.EMBEDDING_DEVICE}
-    encode_kwargs = {'normalize_embeddings': config.NORMALIZE_EMBEDDINGS}
+    """Initializes and returns the embedding function specified in config."""
+    # Use the model name directly, whether it's a HF repo ID or a local path
+    model_name = config.EMBEDDING_MODEL_NAME
+    logger.info(f"Attempting to load embedding model: {model_name}")
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name=config.EMBEDDING_MODEL_NAME,
-        model_kwargs=model_kwargs,
-        encode_kwargs=encode_kwargs,
-    )
-    return embeddings
+    # --- Check if model_name looks like a local path ---
+    # This check is mostly for logging/confirmation purposes now
+    is_local_path = os.path.isdir(model_name)
+
+    if is_local_path:
+         logger.info(f"Loading embeddings from local path: {model_name}")
+    else:
+         # This case should ideally not happen if configured correctly for Streamlit Cloud
+         logger.warning(f"Model name '{model_name}' does not appear to be a local directory. Attempting load from Hub (might be rate-limited on Streamlit Cloud).")
+
+    try:
+         # HuggingFaceEmbeddings handles both repo IDs and local paths
+         embeddings = HuggingFaceEmbeddings(
+             model_name=model_name,
+             model_kwargs={'device': config.EMBEDDING_DEVICE}, # e.g., 'cpu'
+             encode_kwargs={'normalize_embeddings': True} # Keep normalization
+             # cache_folder=config.SENTENCE_TRANSFORMERS_HOME # Cache folder is less relevant now
+         )
+         logger.success(f"Successfully loaded embedding model '{model_name}'.")
+         return embeddings
+    except Exception as e:
+         logger.error(f"Failed to load embedding model '{model_name}': {e}", exc_info=True)
+         # Re-raise the exception to be caught by the calling code in app.py
+         raise
 
 # --- ChromaDB Setup and Retrieval ---
 _chroma_client = None # Module-level client cache
