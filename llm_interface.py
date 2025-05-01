@@ -13,6 +13,9 @@ from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 from langchain_core.output_parsers import StrOutputParser
 
 import config # Import configuration
+import asyncio # Need asyncio for crawl4ai
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
 
 # --- Initialize LLM ---
 @logger.catch(reraise=True) # Keep catch for unexpected errors during init
@@ -40,17 +43,17 @@ def initialize_llm():
 
 def format_docs(docs: List[Document]) -> str:
     """Formats retrieved documents into a string for the prompt."""
+    # Keep detailed formatting as it might help LLM locate info in PDFs
     context_parts = []
     for i, doc in enumerate(docs):
         source = doc.metadata.get('source', 'Unknown')
         page = doc.metadata.get('page', 'N/A')
-        # Add chunk index if available (from RecursiveCharacterTextSplitter with add_start_index=True)
         start_index = doc.metadata.get('start_index', None)
         chunk_info = f"Chunk {i+1}" + (f" (starts at char {start_index})" if start_index is not None else "")
         context_parts.append(
-            f"{chunk_info} from '{source}' (Page {page}):\n{doc.page_content}"
+            f"{chunk_info} from '{source}' (Page {page}):\\n{doc.page_content}"
         )
-    return "\n\n---\n\n".join(context_parts)
+    return "\\n\\n---\\n\\n".join(context_parts)
 
 @logger.catch(reraise=True)
 def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever) -> Optional[str]:
@@ -192,123 +195,294 @@ def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever
 #         logger.error(f"An unexpected error occurred during LLM request: {e}", exc_info=True)
 #         raise RuntimeError(f"An unexpected error occurred: {e}")
 
-# --- Revert back to SINGLE Extraction Chain ---
+# --- LLM-Free Web Scraping Configuration (Revised for Table HTML) ---
+
+# Configure websites to scrape, in order of preference.
+# We now target the main table/container holding the product features.
+WEBSITE_CONFIGS = [
+    {
+        "name": "TE Connectivity",
+        "base_url_template": "https://www.te.com/en/product-{part_number}.html",
+        # JS to click the features expander button if it's not already expanded
+        "pre_extraction_js": (
+            "(async () => {"
+            "    const expandButtonSelector = '#pdp-features-expander-btn';"
+            "    const featuresPanelSelector = '#pdp-features-tabpanel';"
+            "    const expandButton = document.querySelector(expandButtonSelector);"
+            "    const featuresPanel = document.querySelector(featuresPanelSelector);"
+            "    if (expandButton && expandButton.getAttribute('aria-selected') === 'false') {"
+            "        console.log('Features expand button indicates collapsed state, clicking...');"
+            "        expandButton.click();"
+            "        await new Promise(r => setTimeout(r, 1500));"
+            "        console.log('Expand button clicked and waited.');"
+            "    } else if (expandButton) {"
+            "        console.log('Features expand button already indicates expanded state.');"
+            "    } else {"
+            "        console.log('Features expand button selector not found:', expandButtonSelector);"
+            "        if (featuresPanel && !featuresPanel.offsetParent) {"
+            "           console.warn('Button not found, but panel seems hidden. JS might need adjustment.');"
+            "        } else if (!featuresPanel) {"
+            "           console.warn('Neither expand button nor features panel found.');"
+            "        }"
+            "    }"
+            "})();"
+        ),
+        # Selector for the main container holding the features/specifications table
+        "table_selector": "#pdp-features-tabpanel" # Example selector - VERIFY!
+    },
+    {
+        "name": "TraceParts",
+        "base_url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
+        "pre_extraction_js": None, # Assuming no interaction needed for TraceParts search results page
+        # Selector for the table or div containing technical data on TraceParts
+        "table_selector": ".technical-data" # Example selector - VERIFY!
+    },
+    # Add other supplier websites here following the same structure
+]
+
+# --- Web Scraping Function (Revised for Table HTML) ---
+async def scrape_website_table_html(part_number: str) -> Optional[str]:
+    """
+    Attempts to scrape the outer HTML of a features table for a given part number from configured websites.
+
+    Args:
+        part_number: The part number to search for.
+
+    Returns:
+        The outer HTML of the table as a string if found, otherwise None.
+    """
+    if not part_number:
+        logger.debug("Web scraping skipped: No part number provided.")
+        return None
+
+    logger.info(f"Attempting web scrape for features table / Part#: '{part_number}'...")
+
+    for site_config in WEBSITE_CONFIGS:
+        selector = site_config.get("table_selector")
+        if not selector:
+             logger.warning(f"No table_selector defined for {site_config['name']}. Skipping.")
+             continue
+
+        target_url = site_config["base_url_template"].format(part_number=part_number)
+        js_code = site_config.get("pre_extraction_js")
+        logger.debug(f"Attempting scrape on {site_config['name']} ({target_url}) for table selector '{selector}'")
+
+        # Configure crawler run - Use JsonCssExtractionStrategy to get outerHTML
+        extraction_schema = {
+            "name": "TableHTML",
+            "baseSelector": "html", # Apply to whole document
+            "fields": [
+                # Try type: "html" to get the inner/outer HTML of the element
+                {"name": "html_content", "selector": selector, "type": "html"}
+            ]
+        }
+        run_config = CrawlerRunConfig(
+                 cache_mode=CacheMode.BYPASS,
+                 js_code=[js_code] if js_code else None,
+                 page_timeout=20000,
+                 verbose=False, # Set to True for detailed crawl4ai logs
+                 extraction_strategy=JsonCssExtractionStrategy(extraction_schema) # Add strategy
+            )
+        browser_config = BrowserConfig(verbose=False) # Headless default
+
+        try:
+            async with AsyncWebCrawler(config=browser_config) as crawler:
+                # Pass the single run_config object
+                results = await crawler.arun_many(urls=[target_url], config=run_config)
+                result = results[0]
+
+                # Check for success and extracted content from the strategy
+                if result.success and result.extracted_content:
+                    try:
+                        # Expecting JSON like '[{"html_content": "<div>...</div>"}]' or '[]'
+                        extracted_data_list = json.loads(result.extracted_content)
+                        if extracted_data_list and isinstance(extracted_data_list, list) and len(extracted_data_list) > 0:
+                            first_item = extracted_data_list[0]
+                            if isinstance(first_item, dict) and "html_content" in first_item:
+                                table_html = str(first_item["html_content"]).strip()
+                                if table_html:
+                                    logger.success(f"Successfully scraped features table HTML from {site_config['name']} using strategy.")
+                                    return table_html
+                                else:
+                                    logger.debug(f"Extraction strategy returned empty HTML content for '{selector}' on {site_config['name']}.")
+                            else:
+                                logger.debug(f"Unexpected item format in extracted data for table HTML from {site_config['name']}: {first_item}")
+                        else:
+                             logger.debug(f"Extraction strategy did not find or extract HTML for selector '{selector}' on {site_config['name']}.")
+
+                    except json.JSONDecodeError:
+                         logger.warning(f"Failed to parse JSON from crawl4ai extraction result for table HTML on {site_config['name']}: {result.extracted_content[:100]}...")
+                    except Exception as parse_error:
+                         logger.error(f"Error processing extracted table HTML result for {site_config['name']}: {parse_error}", exc_info=True)
+
+                elif result.error_message:
+                     logger.warning(f"Scraping page failed for {site_config['name']} ({target_url}): {result.error_message}")
+                else:
+                    logger.debug(f"Scraping attempt for {site_config['name']} yielded no extracted content or error message.")
+
+        except asyncio.TimeoutError:
+             logger.warning(f"Scraping timed out for {site_config['name']} ({target_url})")
+
+    logger.info(f"Web scraping finished for features table. No table HTML found across configured sites.")
+    return None
+
+
+# --- Extraction Chain (Revised Prompt Template) ---
 def create_extraction_chain(retriever, llm):
     """
-    Creates a RAG chain specifically for running a SINGLE extraction prompt
-    against retrieved context and outputting JSON. Now includes part_number.
+    Creates a RAG chain that uses both PDF context and potentially scraped web table HTML
+    to answer an extraction instruction, prioritizing the scraped HTML.
     """
     if retriever is None or llm is None:
         logger.error("Retriever or LLM is not initialized for extraction chain.")
         return None
 
-    # --- Updated template to include part_number ---
+    # --- Updated Template to Prioritize Scraped HTML ---
     template = """
-    Use the following pieces of retrieved context to perform the extraction task for the part number "{part_number}" based on the reasoning steps provided in the Extraction Instructions.
-    Analyze the context carefully and follow the reasoning steps precisely.
+You are an expert data extractor. Your goal is to extract a specific piece of information based on the Extraction Instructions provided below.
+You are given two potential sources of information:
+1. Scraped HTML Content: This is HTML snippet, likely a table or section, scraped directly from a supplier website for the part number. THIS SOURCE IS PREFERRED AND SHOULD BE USED IF THE INFORMATION IS PRESENT AND CLEAR.
+2. Document Context: These are text chunks extracted from PDF documents related to the part number. Use this as a fallback if the Scraped HTML Content is missing, doesn't contain the required information, or is ambiguous.
 
-    Context:
-    {context}
+Part Number Information (if provided by user):
+{part_number}
 
-    Extraction Instructions:
-    {extraction_instructions}
+--- PREFERRED SOURCE ---
+Scraped HTML Content (from supplier website):
+```html
+{scraped_table_html}
+```
+--- END PREFERRED SOURCE ---
 
-    ---
-    Final Output Requirement:
-    Your final output MUST be a single, valid JSON object containing exactly one key-value pair.
-    - The key for the JSON object MUST be the string: "{attribute_key}"
-    - The value MUST be the extracted result determined by following the Extraction Instructions, provided as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
-    - Do NOT include any explanations, reasoning, or any text outside of this single JSON object in your response.
+--- FALLBACK SOURCE ---
+Document Context (from PDFs):
+{context}
+--- END FALLBACK SOURCE ---
 
-    Example Output Format:
-    {{"{attribute_key}": "extracted_value"}}
+Extraction Instructions:
+{extraction_instructions}
 
-    Output:
-    """
+---
+IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
+- The key for the JSON object MUST be the string: "{attribute_key}"
+- The value MUST be the extracted result determined by following the Extraction Instructions, prioritizing the 'Scraped HTML Content' if available and relevant.
+- Provide the value as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
+- If the information cannot be found in EITHER the Scraped HTML Content OR the Document Context based on the instructions, the value should be "NOT FOUND".
+- Do NOT include any explanations, reasoning, or any text outside of the single JSON object in your response.
+
+Example Output Format:
+{{"{attribute_key}": "extracted_value_from_html_or_pdf"}}
+
+Output:
+"""
     prompt = PromptTemplate.from_template(template)
 
-    def format_docs(docs):
-        # Using detailed format_docs might help context
-        context_parts = []
-        for i, doc in enumerate(docs):
-            source = doc.metadata.get('source', 'Unknown')
-            page = doc.metadata.get('page', 'N/A')
-            start_index = doc.metadata.get('start_index', None)
-            chunk_info = f"Chunk {i+1}" + (f" (starts at char {start_index})" if start_index is not None else "")
-            context_parts.append(
-                f"{chunk_info} from '{source}' (Page {page}):\n{doc.page_content}"
-            )
-        return "\n\n---\n\n".join(context_parts)
-        # Or simpler version: return "\n\n".join(doc.page_content for doc in docs)
-
-
     # Define the extraction chain using LCEL
-    # Takes 'extraction_instructions', 'attribute_key', and 'part_number' as input
+    # Takes 'extraction_instructions', 'attribute_key', 'part_number', and 'scraped_table_html' as input
     extraction_chain = (
         RunnableParallel(
-            # Retrieve context based on the attribute_key and part_number for better focus
-            {"context": RunnablePassthrough() | (lambda x: retriever.invoke(f"For part number {x['part_number']}, extract information about {x['attribute_key']}")) | format_docs,
-             "extraction_instructions": RunnablePassthrough(),
-             "attribute_key": RunnablePassthrough(),
-             "part_number": RunnablePassthrough() } # Pass part_number through
+            # Retrieve PDF context based on the attribute_key and part_number
+            context=RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']} for part number {x.get('part_number', 'N/A')}")) | format_docs,
+            # Pass through other inputs directly
+            extraction_instructions=RunnablePassthrough(),
+            attribute_key=RunnablePassthrough(),
+            part_number=RunnablePassthrough(),
+            scraped_table_html=RunnablePassthrough() # Pass the scraped HTML
         )
         # Assign the inputs correctly to the prompt variables
-        .assign(extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
-                attribute_key=lambda x: x['attribute_key']['attribute_key'],
-                part_number=lambda x: x['part_number']['part_number']) # Assign part_number
+        # Ensure all inputs exist in the dictionary passed to assign
+        .assign(
+            extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
+            attribute_key=lambda x: x['attribute_key']['attribute_key'],
+            part_number=lambda x: x['part_number'].get('part_number', "Not Provided"),
+            scraped_table_html=lambda x: x['scraped_table_html'].get('scraped_table_html', "Not Available") # Get scraped HTML safely
+        )
         | prompt
         | llm
         | StrOutputParser()
     )
 
-    logger.info("SINGLE JSON Extraction RAG chain created successfully (includes part_number).")
+    logger.info("Extraction RAG chain (with web scrape priority) created successfully.")
     return extraction_chain
 
+
+# --- Simplified run_extraction (Calls the updated chain) ---
 @logger.catch(reraise=True)
-def run_extraction(extraction_instructions: str, attribute_key: str, part_number: str, extraction_chain):
+async def run_extraction(extraction_instructions: str, attribute_key: str, extraction_chain, part_number: str, scraped_table_html: Optional[str]):
     """
-    Runs a specific extraction prompt/instructions through the JSON extraction RAG chain,
-    now including the part_number.
+    Runs the extraction RAG chain, providing both PDF context (via retriever in chain)
+    and potentially pre-scraped web table HTML. The chain's prompt prioritizes the HTML.
     """
+    if not attribute_key:
+        logger.warning("Received empty attribute key.")
+        return '{"error": "No attribute key provided."}'
     if not extraction_chain:
         logger.error("Extraction chain is not available.")
         return '{"error": "Extraction chain is not initialized."}'
     if not extraction_instructions:
-        logger.warning("Received empty extraction instructions.")
-        return '{"error": "No extraction instructions provided."}'
-    if not attribute_key:
-        logger.warning("Received empty attribute key.")
-        return '{"error": "No attribute key provided."}'
-    if not part_number:
-        logger.warning("Received empty part number.")
-        return '{"error": "No part number provided."}'
+        logger.warning(f"Received empty extraction instructions for '{attribute_key}'. LLM might struggle.")
+        # Proceed, but the LLM might return "NOT FOUND" or hallucinate without instructions.
 
     try:
-        logger.info(f"Invoking extraction chain for key: '{attribute_key}', Part Number: '{part_number}'")
-        # Pass part_number in the input dictionary
+        log_msg = f"Invoking extraction chain for key: '{attribute_key}' with Part Number: '{part_number if part_number else 'None'}'"
+        if scraped_table_html:
+             log_msg += " (using scraped web HTML)."
+        else:
+             log_msg += " (no scraped web HTML available, using PDF context)."
+        logger.info(log_msg)
+
+        # Prepare input data for the chain
         input_data = {
             "extraction_instructions": extraction_instructions,
             "attribute_key": attribute_key,
-            "part_number": part_number
+            "part_number": part_number if part_number else "Not Provided",
+            "scraped_table_html": scraped_table_html if scraped_table_html else "Not Available" # Pass HTML or placeholder
         }
-        response = extraction_chain.invoke(input_data)
-        logger.info("Extraction chain invoked successfully.")
-        # Clean potential markdown ```json ... ``` tags
-        if response.strip().startswith("```json"):
-            response = response.strip()[7:]
-            if response.endswith("```"):
-                response = response[:-3]
-        return response.strip()
+
+        # Use ainvoke for the async chain
+        response = await extraction_chain.ainvoke(input_data)
+        logger.info(f"Extraction chain invoked successfully for '{attribute_key}'.")
+
+        # --- Post-processing LLM response (same as before) ---
+        cleaned_response = response
+        think_start_tag = "<think>"
+        think_end_tag = "</think>"
+        start_index = cleaned_response.find(think_start_tag)
+        end_index = cleaned_response.find(think_end_tag)
+        if start_index != -1 and end_index != -1 and end_index > start_index:
+             cleaned_response = cleaned_response[end_index + len(think_end_tag):].strip()
+
+        if cleaned_response.strip().startswith("```json"):
+            cleaned_response = cleaned_response.strip()[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+        cleaned_response = cleaned_response.strip()
+
+        # Attempt to validate/load JSON before returning
+        try:
+             # Basic validation: does it start with { and end with }?
+             if not (cleaned_response.startswith('{') and cleaned_response.endswith('}')):
+                  raise json.JSONDecodeError("Does not look like a JSON object.", cleaned_response, 0)
+             # Try full parse
+             json.loads(cleaned_response)
+             return cleaned_response
+        except json.JSONDecodeError as json_err:
+             logger.error(f"LLM for '{attribute_key}' returned invalid JSON after cleaning: {json_err}. Response: '{cleaned_response}' Raw: '{response}'")
+             # Return error JSON including the raw response for debugging in the UI
+             err_payload = {"error": f"LLM returned invalid JSON: {json_err}", "raw_llm_output": response}
+             return json.dumps(err_payload) # Ensure the error itself is valid JSON
+
     except Exception as e:
         error_str = str(e).lower()
-        # Add specific check for rate limit errors
         if "rate limit" in error_str or "too many requests" in error_str or "429" in error_str:
-             logger.error(f"Rate limit hit during extraction for '{attribute_key}' (PN: {part_number}): {e}", exc_info=False)
-             return f'{{"error": "API Rate Limit Hit for {attribute_key} (PN: {part_number})" }}' # Include PN in error
+             logger.error(f"Rate limit hit during LLM extraction for '{attribute_key}': {e}", exc_info=False)
+             return json.dumps({"error": f"API Rate Limit Hit for {attribute_key}"}) # Valid JSON error
         else:
-             logger.error(f"Error invoking extraction chain for '{attribute_key}' (PN: {part_number}): {e}", exc_info=True)
-             return f'{{"error": "An error occurred during extraction (PN: {part_number}): {str(e)}"}}' # Include PN in error
+             logger.error(f"Error invoking LLM extraction chain for '{attribute_key}': {e}", exc_info=True)
+             return json.dumps({"error": f"An error occurred during LLM extraction: {str(e)}"}) # Valid JSON error
 
-# --- REMOVE BATCH FUNCTIONS ---
-# def create_batch_extraction_chain(retriever, llm): ...
-# def run_batch_extraction(batch_tasks_details: str, batch_extraction_chain): ...
+
+# --- Remove old scraping function and placeholders ---
+# async def scrape_website_for_attribute(attribute_key: str, part_number: str) -> Optional[str]: ...
+# TARGET_URLS = [ ... ]
+# ATTRIBUTE_SELECTORS = { ... }
