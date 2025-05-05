@@ -6,7 +6,7 @@ MATERIAL_PROMPT = """
 Extract material filling additives:
  Material filling describes additives added to the base material in order to influence the mechanical material characteristics. Most common additives are GF (glass-fiber), GB (glass-balls), MF (mineral-fiber) and T (talcum).
     **Output format:**
-    MATERIAL FILLING: [abbreviations/none/NOT FOUND]
+    MATERIAL FILLING: [abbreviations/none]
 """
 
 MATERIAL_NAME_PROMPT = """
@@ -214,7 +214,7 @@ Examples:
 
 Output format:
 REASONING: [Key determinations following the steps and priority rule]
-GENDER: [Male/Female/Unisex/Hybrid/NOT FOUND]
+GENDER: [Male/Female/Unisex/Hybrid]
 """
 
 HEIGHT_MM_PROMPT = """
@@ -396,7 +396,7 @@ Determine connector width using this reasoning chain:
     → WIDTH [MM]: 26.2
 
     Output format:
-    WIDTH [MM]: [value/NOT FOUND]
+    WIDTH [MM]: [value]
 """
 
 NUMBER_OF_CAVITIES_PROMPT = """
@@ -455,67 +455,8 @@ Determine cavity count using this reasoning chain:
 """
 
 NUMBER_OF_ROWS_PROMPT = """
-Determine the number of rows using this reasoning chain:
-
-    STEP 1: HOUSING GEOMETRY CHECK
-    - Identify housing shape:
-      ✓ Square/rectangular: Proceed
-      ✗ Round/triangular/irregular: → 0
-    - Validate via:
-      ✓ Explicit labels (\"rectangular housing\")
-      ✓ Diagram annotations (X > Y dimensions)
-
-    STEP 2: CAVITY UNIFORMITY VERIFICATION
-    - Check for:
-      ✓ Identical cavity sizes in all positions
-      ✗ Mixed dimensions (e.g., \"Pos1: 2.8mm, Pos2: 3.5mm\")
-    - Reject if:
-      * \"Dual-size cavities\"
-      * \"Mixed terminal types\"
-
-    STEP 3: ROW IDENTIFICATION
-    - Scan for:
-      ✓ Explicit terms: \"ROW\", \"POSN\", \"WAY\" (e.g., \"2-ROW\", \"3-POSN\")
-      ✓ Title block labels: \"ROWS: 2\"
-      ✓ Part numbers: \"-2R\" suffix
-    - Map terms to numbers:
-      * \"1-WAY\" → 1
-      * \"DUAL ROWS\" → 2
-
-    STEP 4: DIRECTIONAL VALIDATION
-    - Confirm rows align with the **longer side (X-axis)**:
-      ✓ Horizontal cavity alignment
-      ✗ Diagonal/vertical arrangements → 0
-
-    STEP 5: CONFLICT RESOLUTION
-    - For conflicting values:
-      1. Prioritize by document date (newest first)
-      2. Engineering drawings > Marketing materials
-      3. Physical labels > Text descriptions
-
-    STEP 6: FINAL QUALIFICATION
-    - Return 0 if:
-      ✓ Single cavity
-      ✓ Non-rectangular shape
-      ✓ Mixed cavity sizes
-      ✓ Non-horizontal rows
-    - Else return validated integer
-
-    Examples:
-    \"Rectangular housing, 3-ROW (Cavities: 2.8mm uniform)\"
-    → REASONING: [Step1] Rect ✓ → [Step2] Uniform ✓ → [Step3] Explicit 3 → Valid
-    → NUMBER OF ROWS: 3
-
-    \"Dual-POSN connector (round housing)\"
-    → REASONING: [Step1] Round ✗ → Auto reject
-    → NUMBER OF ROWS: 0
-
-    \"2023 Spec: 2-ROW | 2025 Spec: 4-POSN\"
-    → REASONING: [Step5] Newer doc → [Step3] 4-POSN=4 → Valid
-    → NUMBER OF ROWS: 4
-
-    Output format:
-    NUMBER OF ROWS: [integer/0]
+Determine the number of rows 
+    
 """
 
 MECHANICAL_CODING_PROMPT = """
@@ -639,7 +580,7 @@ Determine connector color using this reasoning chain:
     → COLOUR: multi
 
     Output format:
-    COLOUR: [color/multi/NOT FOUND]
+    COLOUR: [color/multi]
 """
 
 COLOUR_CODING_PROMPT = """
@@ -688,7 +629,7 @@ Determine Colour Coding using this reasoning chain:
     → COLOUR CODING: none
 
     Output format:
-    COLOUR CODING: [Color/none/NOT FOUND]
+    COLOUR CODING: [Color/none]
 """
 
 # --- Sealing & Environmental ---
@@ -755,7 +696,7 @@ Determine working temperatures using this reasoning chain:
     → WORKING TEMPERATURE: NOT FOUND
 
   Output format:
-    WORKING TEMPERATURE: /[Max]/[Min]/NOT FOUND
+    WORKING TEMPERATURE: /[Max]/[Min]
 """
 
 HOUSING_SEAL_PROMPT = """
@@ -826,61 +767,9 @@ HOUSING SEAL: [Radial Seal / Interface Seal ]
 """
 
 WIRE_SEAL_PROMPT = """
-Determine the Wire Seal type using this reasoning chain:
+Determine the Wire Seal type:
 
-    STEP 1: TERM IDENTIFICATION
-    - Scan for explicit keywords:
-      ✓ **Single Wire Seal**:
-        * \"Per-wire seal\"
-        * Unique part numbers tied to wire sizes (e.g., \"SW-5A for 2.8mm wires\")
-      ✓ **Injected**:
-        * \"Injected sealant\"
-        * \"Potting compound\" (if cavity-specific)
-      ✓ **Mat Seal**:
-        * \"Gel seal\"/\"Silicone mat\"
-        * \"Family seal system\"
-      ✓ **None**:
-        * \"Unsealed cavities\"
-        * \"No wire sealing required\"
-
-    STEP 2: CONTEXT VALIDATION
-    - Confirm terms relate to **wire-to-cavity sealing**:
-      ✓ Reject general seals (e.g., housing radial seals)
-      ✓ Validate part numbers:
-        * \"SW-\" prefix → Single Wire Seal
-        * \"GEL-\" prefix → Mat Seal
-
-    STEP 3: CLASSIFICATION HIERARCHY
-    1. **Single Wire Seal** if part numbers map to wire sizes/positions
-    2. **Injected** for cavity-specific injected materials
-    3. **Mat Seal** for gel/silicone family terms
-    4. **None** if explicitly stated or implied by absence
-
-    STEP 4: CONFLICT RESOLUTION
-    - Multiple seal types? → Prioritize:
-      1. Explicit statements (\"Primary seal: Injected\")
-      2. Part number evidence
-      3. Document specificity (e.g., \"Mat Seal\" vs generic \"sealed\")
-
-    STEP 5: DEFAULT HANDLING
-    - No terms/part numbers after Steps 1-4? → **NOT FOUND**
-
-    Examples:
-    \"Cavity seals: SW-12 (1.5mm²) / SW-14 (2.5mm²)\"
-    → REASONING: [Step1] Part numbers + wire sizes → **Single Wire Seal**
-    → WIRE SEAL: Single Wire Seal
-
-    \"Injected epoxy seals for all cavities\"
-    → REASONING: [Step1] \"Injected\" + cavity context → **Injected**
-    → WIRE SEAL: Injected
-
-    \"Gel-based family sealing system\"
-    → REASONING: [Step1] \"Gel\" + \"family\" → **Mat Seal**
-    → WIRE SEAL: Mat Seal
-
-    \"Terminal cavities require no additional sealing\"
-    → REASONING: [Step1] Explicit negation → **None**
-    → WIRE SEAL: None
+    Wire seal describes the sealing of the space between wire and cavity wall, when a terminal is fitted in a cavity. There are different possibilities for sealing available: Single wire seal, Injected, Mat seal (includes “gel family seal” and “silicone family seal”), None.
 
     Output format:
     WIRE SEAL: [Single Wire Seal/Injected/Mat Seal/None]
@@ -942,55 +831,7 @@ Determine sealing status using this reasoning chain:
 """
 
 SEALING_CLASS_PROMPT = """
-Determine Sealing Class (IP Code) using this reasoning chain:
-
-    STEP 1: EXPLICIT IP CODE EXTRACTION
-    - Scan for ISO 20653 codes:
-      ✓ Valid formats: IPx0, IPx4, IPx4K, IPx5, IPx6, IPx6K, IPx7, IPx8, IPx9, IPx9K
-      ✗ Reject invalid codes: IPx1, IPx2, IPx3
-    - For multiple codes:
-      → Select highest protection level (e.g., IPx9K > IPx7)
-
-    STEP 2: CLASS S INFERENCE
-    - If no explicit IP codes:
-      ✓ Check for S-class mentions:
-        * \"Class S1\" → IPx0
-        * \"Class S2\" → IPx7
-        * \"Class S3\" → IPx9K
-      ✓ Map functional descriptions:
-        * \"Unsealed\"/\"No environmental protection\" → IPx0
-        * \"Sealed\"/\"Waterproof\" → IPx7
-        * \"High-pressure resistant\"/\"Washdown-rated\" → IPx9K
-
-    STEP 3: DOCUMENT HIERARCHY VALIDATION
-    - For conflicts:
-      1. Engineering specs > Marketing materials
-      2. Latest revision > Older versions
-      3. Explicit IP codes > S-class inferences
-
-    STEP 4: FINAL DEFAULT
-    - If no data after Steps 1-3:
-      → Return IPx0 (per Class S1 default)
-
-    Examples:
-    \"IPx6K certified per ISO 20653\"
-    → REASONING: [Step1] Explicit code → IPx6K
-    → SEALING CLASS: IPx6K
-
-    \"Class S2 connector for marine environments\"
-    → REASONING: [Step2] S2 → IPx7
-    → SEALING CLASS: IPx7
-
-    \"Unsealed housing with no IP rating\"
-    → REASONING: [Step2] \"Unsealed\" → IPx0
-    → SEALING CLASS: IPx0
-
-    \"General-purpose automotive connector\"
-    → REASONING: [Step4] No data → Default IPx0
-    → SEALING CLASS: IPx0
-
-    Output format:
-    SEALING CLASS: [IPx0/IPx4/IPx4K/IPx5/IPx6/IPx6K/IPx7/IPx8/IPx9/IPx9K]
+According to their qualification for usage under different environmental conditions, systems are divided in corresponding protection classes, so-called IP-codes. The abbreviation IP means "International Protection" according DIN; in the English-speaking countries, the classes are called "Ingress Protection".
 """
 
 # --- Terminals & Connections ---
@@ -1047,7 +888,7 @@ Identify approved contact systems using this reasoning chain:
     → CONTACT SYSTEMS: NOT FOUND
 
     Output format:
-    CONTACT SYSTEMS: [system1,system2,.../NOT FOUND]
+    CONTACT SYSTEMS: [system1,system2,...]
 """
 
 TERMINAL_POSITION_ASSURANCE_PROMPT = """
@@ -1099,7 +940,7 @@ Determine Terminal Position Assurance (TPA) count using this reasoning chain:
     → TERMINAL POSITION ASSURANCE: 2
 
     Output format:
-    TERMINAL POSITION ASSURANCE: [number/0/NOT FOUND]
+    TERMINAL POSITION ASSURANCE: [number/0]
 """
 
 CONNECTOR_POSITION_ASSURANCE_PROMPT = """
@@ -1218,7 +1059,7 @@ Determine pre-assembly status using this reasoning chain:
     STEP 3: COMPONENT VS FULL ASSEMBLY
     - Differentiate:
       ✓ Full connector assembly → Check for disassembly mandates
-      ✓ Individual components → Check if they’re add-ons requiring removal
+      ✓ Individual components → Check if they're add-ons requiring removal
 
     STEP 4: EXPLICIT STATEMENT PRIORITIZATION
     - Hierarchy of evidence:
@@ -1249,7 +1090,7 @@ Determine pre-assembly status using this reasoning chain:
     → PRE-ASSEMBLED: NOT FOUND
 
     Output format:
-    PRE-ASSEMBLED: [Yes/No/NOT FOUND]
+    PRE-ASSEMBLED: [Yes/No]
 """
 
 CONNECTOR_TYPE_PROMPT = """
@@ -1301,7 +1142,7 @@ Determine the **Type of Connector** using this reasoning chain:
     → TYPE OF CONNECTOR: NOT FOUND
 
     Output format:
-    TYPE OF CONNECTOR: [Standard/Contact Carrier/Actuator/Other/NOT FOUND]
+    TYPE OF CONNECTOR: [Standard/Contact Carrier/Actuator/Other]
 """
 
 SET_KIT_PROMPT = """
@@ -1353,7 +1194,7 @@ Determine the **Set/Kit** status using this reasoning chain:
     → SET/KIT: NOT FOUND
 
     Output format:
-    SET/KIT: [Yes/No/NOT FOUND]
+    SET/KIT: [Yes/No]
 """
 
 # --- Specialized Attributes ---
