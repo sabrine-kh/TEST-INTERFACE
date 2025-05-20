@@ -655,7 +655,7 @@ else:
                             logger.info(f"Stage 2 (PDF) for '{attribute_key}' took {run_time:.2f} seconds.")
                             time.sleep(SLEEP_INTERVAL_SECONDS) # Add delay
                         except Exception as e:
-                             logger.error(f"Error during Stage 2 (PDF) call for '{attribute_key}': {e}", exc_info=True)
+                             logger.error("Error during Stage 2 (PDF) call for '{}': {}", str(attribute_key), str(e), exc_info=True)
                              json_result_str = f'{{"error": "Exception during Stage 2 call: {e}"}}'
                              run_time = time.time() - start_time
                 
