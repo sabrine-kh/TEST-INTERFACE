@@ -506,7 +506,11 @@ else:
                             logger.info(f"Stage 1 (Web) for '{attribute_key}' took {run_time:.2f} seconds.")
                             time.sleep(SLEEP_INTERVAL_SECONDS) # Add delay
                         except Exception as e:
-                             logger.error(f"Error during Stage 1 (Web) call for '{attribute_key}': {e}", exc_info=True)
+                             # Original problematic line
+# logger.error(f"Error during Stage 1 (Web) call for '{attribute_key}': {e}", exc_info=True)
+
+# Fixed line
+                             logger.error("Error during Stage 1 (Web) call for '{}': {}", str(attribute_key), str(e), exc_info=True)
                              json_result_str = f'{{"error": "Exception during Stage 1 call: {e}"}}'
                              run_time = time.time() - start_time # Record time even on error
                 
