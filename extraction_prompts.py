@@ -584,52 +584,9 @@ Determine connector color using this reasoning chain:
 """
 
 COLOUR_CODING_PROMPT = """
-Determine Colour Coding using this reasoning chain:
-
-    STEP 1: MECHANICAL CODING PREREQUISITE
-    - Confirm existence of mechanical coding:
-      ✓ Check for Coding A/B/C/D/Z or physical keying
-      ✗ No mechanical coding → Return \"none\"
-
-    STEP 2: COMPONENT FOCUS IDENTIFICATION
-    - Scan primary coding components:
-      ✓ CPA latches ✓ TPA inserts ✓ Coding keys
-      ✓ Mechanical polarization features
-      ✗ Ignore non-coding parts (housing base, seals)
-
-    STEP 3: COLOR DIFFERENTIATION CHECK
-    - Compare component colors to base housing:
-      ✓ Different color on ≥1 coding component → Proceed
-      ✗ Identical colors → Return \"none\"
-    - Validate explicit differentiation purpose:
-      * \"Color-coded for variant identification\"
-      * \"Visual distinction between versions\"
-
-    STEP 4: DOMINANT COLOR SELECTION
-    - Hierarchy for color determination:
-      1. Explicit coding statements (\"Red denotes Type B\")
-      2. Majority of coding components
-      3. Highest contrast vs housing
-      4. First mentioned color
-
-    STEP 5: DOCUMENT CONSISTENCY VERIFICATION
-    - Require ALL:
-      1. Same drawing/family context
-      2. Multiple connector variants present
-      3. Color-coding purpose clearly stated
-    - Reject isolated color mentions
-
-    EXAMPLES:
-    \"Type A (Blue CPA) vs Type B (Red CPA)\"
-    → REASONING: [Step1] Mech coding ✓ → [Step3] Color diff ✓ → [Step4] Explicit
-    → COLOUR CODING: Blue/Red (depending on variant)
-
-    \"Black housing with black CPA/TTA\"
-    → REASONING: [Step1] Mech coding ✓ → [Step3] No diff → \"none\"
-    → COLOUR CODING: none
-
-    Output format:
-    COLOUR CODING: [Color/none]
+It’s the colour used to distinguish between connectors of a connector family, existing in the same drawing.
+To be able to talk about colour coding, the following conditions must be met: 1. connectors must have a mechanical coding, 2. connectors must have different/additional color of individual parts in the housing
+If the connector has no colour coding -> value = none
 """
 
 # --- Sealing & Environmental ---
@@ -769,7 +726,7 @@ HOUSING SEAL: [Radial Seal / Interface Seal ]
 WIRE_SEAL_PROMPT = """
 Determine the Wire Seal type:
 
-    Wire seal describes the sealing of the space between wire and cavity wall, when a terminal is fitted in a cavity. There are different possibilities for sealing available: Single wire seal, Injected, Mat seal (includes “gel family seal” and “silicone family seal”), None.
+    Wire seal describes the  of the space between wire and cavity wall, when a terminal is fitted in a cavity. There are different possibilities for sealing available: Single wire seal, Injected, Mat seal (includes “gel family seal” and “silicone family seal”), None.
 
     Output format:
     WIRE SEAL: [Single Wire Seal/Injected/Mat Seal/None]
