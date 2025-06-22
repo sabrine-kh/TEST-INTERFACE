@@ -460,68 +460,11 @@ Determine the number of rows
 """
 
 MECHANICAL_CODING_PROMPT = """
-Determine mechanical coding using this reasoning chain:
-
-    STEP 1: CODING IDENTIFICATION
-    - Scan for:
-      ✓ Explicit labels: \"Coding A/B/C/D/Z\" (case-sensitive)
-      ✓ Diagram markers: Keyed slots/pins without labels
-      ✓ Universal coding indicators: \"neutral coding\", \"0-position\"
-      ✓ Explicit negatives: \"no mechanical coding\"
-
-    STEP 2: DOCUMENT ANALYSIS
-    - For visual-only coding:
-      ✓ Check drawing annotations
-      ✓ Verify text references:
-        → Labeled? Use letter code
-        → Unlabeled? → \"no naming\"
-    - For family connectors:
-      ✓ Cross-reference related parts
-      ✓ Confirm universal compatibility
-
-    STEP 3: CODING TYPE RESOLUTION
-    1. Explicitly named (A/B/C/D):
-       - Verify case match (A≠a)
-    2. Universal connector (Z):
-       - Requires ALL:
-         * Family-wide compatibility
-         * Neutral/0-position designation
-    3. No coding:
-       - Explicit \"none\" statement
-       - Absence of physical coding features
-    4. Ambiguous:
-       - Unlabeled diagram features → \"no naming\"
-
-    STEP 4: CONFLICT RESOLUTION
-    - Multiple codings:
-      ✓ Apply document hierarchy:
-        1. Latest revision date
-        2. Engineering drawings > Spec sheets
-        3. Part numbers with revision suffixes
-      ✓ Reject unversioned conflicts
-
-    STEP 5: VALIDATION CHECK
-    - Final requirements:
-      1. Case-sensitive exact match
-      2. Contextual alignment (mating pair)
-      3. Physical feature verification
-      4. Single definitive answer
-
-    Examples:
-    \"Positioning: Coding C (DWG-123 Rev.2)\"
-    → REASONING: [Step1] Explicit → [Step3] Valid case → [Step5] Confirmed
-    → MECHANICAL CODING: C
-
-    \"Keyed slots shown in Fig.5 (unlabeled)\"
-    → REASONING: [Step2] Visual-only → [Step3] Ambiguous → \"no naming\"
-    → MECHANICAL CODING: no naming
-
-    \"Universal connector for all variants\"
-    → REASONING: [Step3] Family-wide → Z
-    → MECHANICAL CODING: Z
-
-    Output format:
-    MECHANICAL CODING: [A/B/C/D/Z/no naming/none]
+A mechanical coding is designed at the plugged connector and its counterpart. The coding is used to avoid failures during pushing process.
+The location of the tongue and groove at the plastic parts are varying with the different mechanical coding (A/B/C/D).
+Often the coding is mentioned on the drawing, but sometimes not and then it is only drawn. In this case, we use the value: “no naming”.
+If all available coding of a connector family are fitting in a universal coded (= neutral or 0 coding) connector, the universal connector has the coding value = Z.
+If the connector has no coding, the value = none.
 """
 
 COLOUR_PROMPT = """
